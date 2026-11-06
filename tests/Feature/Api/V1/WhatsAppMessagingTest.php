@@ -88,6 +88,65 @@ class WhatsAppMessagingTest extends TestCase
         $this->assertDatabaseHas('messages', ['id' => $messageId, 'status' => 'sent', 'whatsapp_message_id' => 'wamid.123']);
     }
 
+    public function test_inbox_free_text_accepts_content_alias_with_conversation_id(): void
+    {
+        Queue::fake([SendWhatsAppMessage::class]);
+        [$user, $business] = $this->membership();
+        $this->connectionFor($business);
+        $customer = $this->customerFor($business);
+
+        $conversation = $this->actingAs($user)->postJson('/api/v1/conversations', [
+            'customer_id' => $customer->id,
+        ])->assertCreated()->json('data');
+
+        $this->actingAs($user)->postJson('/api/v1/messages', [
+            'conversation_id' => $conversation['id'],
+            'customer_id' => $customer->id,
+            'content' => 'Hello from the inbox',
+        ])->assertCreated()
+            ->assertJsonPath('data.status', 'queued')
+            ->assertJsonPath('data.type', 'text');
+
+        $this->assertDatabaseHas('messages', [
+            'conversation_id' => $conversation['id'],
+            'customer_id' => $customer->id,
+            'type' => 'text',
+        ]);
+        $this->assertStringContainsString('Hello from the inbox', (string) \App\Models\Message::withoutGlobalScopes()->latest('id')->value('body'));
+    }
+
+    public function test_inbox_free_text_is_sent_as_custom_template(): void
+    {
+        Queue::fake([SendWhatsAppMessage::class]);
+        [$user, $business] = $this->membership();
+        $this->connectionFor($business);
+        $customer = $this->customerFor($business, ['name' => 'Amaka', 'phone' => '+234 803 000 0001']);
+        $this->templateFor($business, [
+            'name' => 'flowcrm_custom_message',
+            'whatsapp_template_id' => 'flowcrm_custom_message',
+            'category' => 'utility',
+            'content' => 'Hello {{customer_name}}, {{business_name}} sent you a message: {{message}}. Reply to this message if you have any questions.',
+        ]);
+
+        $response = $this->actingAs($user)->postJson('/api/v1/messages', [
+            'customer_id' => $customer->id,
+            'content' => 'Please call me back',
+        ])->assertCreated();
+
+        $this->assertSame('template', $response->json('data.type'));
+        $this->assertStringContainsString('Please call me back', (string) $response->json('data.body'));
+
+        Http::fake(['graph.facebook.com/*' => Http::response(['messages' => [['id' => 'wamid.custom.1']]], 200)]);
+        (new SendWhatsAppMessage((int) $response->json('data.id')))->handle(
+            app(\App\Services\WhatsAppCloudApi::class),
+            app(\App\Services\NotificationService::class),
+        );
+
+        Http::assertSent(fn ($request) => $request['type'] === 'template'
+            && $request['template']['name'] === 'flowcrm_custom_message'
+            && collect($request['template']['components'][0]['parameters'] ?? [])->contains(fn ($p) => ($p['text'] ?? '') === 'Please call me back'));
+    }
+
     public function test_cloud_api_failure_marks_message_failed_and_notifies(): void
     {
         Queue::fake([SendWhatsAppMessage::class]);
@@ -258,7 +317,34 @@ class WhatsAppMessagingTest extends TestCase
 
         $signature = 'sha256=' . hash_hmac('sha256', $payload, 'app-secret');
         $this->call('POST', '/api/v1/webhooks/whatsapp', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_X_HUB_SIGNATURE_256' => $signature], $payload)->assertStatus(200);
-        Queue::assertPushed(ProcessWhatsAppWebhook::class);
+    }
+
+    public function test_http_webhook_stores_a_customer_reply_on_the_existing_conversation(): void
+    {
+        config(['services.whatsapp.app_secret' => 'app-secret']);
+        [$user, $business] = $this->membership();
+        $this->connectionFor($business, 'phone-9');
+        $customer = $this->customerFor($business, ['phone' => '+234 816 674 0794']);
+        $this->actingAs($user)->postJson('/api/v1/conversations', ['customer_id' => $customer->id])->assertCreated();
+
+        $body = json_encode(['object' => 'whatsapp_business_account', 'entry' => [['changes' => [['field' => 'messages', 'value' => [
+            'metadata' => ['phone_number_id' => 'phone-9'],
+            'messages' => [['from' => '2348166740794', 'id' => 'wamid.reply.1', 'type' => 'text', 'text' => ['body' => 'Yes I got it']]],
+        ]]]]]], JSON_THROW_ON_ERROR);
+        $signature = 'sha256=' . hash_hmac('sha256', $body, 'app-secret');
+
+        $this->call('POST', '/api/v1/webhooks/whatsapp', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => $signature,
+        ], $body)->assertOk();
+
+        $this->assertDatabaseHas('messages', [
+            'business_id' => $business->id,
+            'customer_id' => $customer->id,
+            'whatsapp_message_id' => 'wamid.reply.1',
+            'direction' => 'inbound',
+            'body' => 'Yes I got it',
+        ]);
     }
 
     public function test_webhook_processing_creates_inbound_messages_and_updates_statuses_idempotently(): void

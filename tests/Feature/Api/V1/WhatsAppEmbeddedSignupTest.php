@@ -91,9 +91,9 @@ class WhatsAppEmbeddedSignupTest extends TestCase
             ->assertJsonPath('data.quality', 'green')
             ->assertJsonPath('data.status', 'active')
             ->assertJsonPath('data.onboarding_source', 'embedded')
-            ->assertJsonPath('data.templates.total', 4)
+            ->assertJsonPath('data.templates.total', 5)
             ->assertJsonPath('data.templates.approved', 1)
-            ->assertJsonPath('data.templates.pending', 3)
+            ->assertJsonPath('data.templates.pending', 4)
             ->assertJsonMissingPath('data.access_token_encrypted')
             ->assertJsonMissingPath('data.pin_encrypted');
 
@@ -110,14 +110,14 @@ class WhatsAppEmbeddedSignupTest extends TestCase
         Http::assertSent(fn (Request $r) => str_contains($r->url(), '/waba-9/subscribed_apps') && $r->hasHeader('Authorization', 'Bearer biz-token'));
         Http::assertSent(fn (Request $r) => str_contains($r->url(), '/phone-9/register') && $r['pin'] === $connection->pin_encrypted);
         Http::assertSent(fn (Request $r) => str_contains($r->url(), '/cl-1/whatsapp_credit_sharing_and_attach') && $r->hasHeader('Authorization', 'Bearer platform-token') && $r['waba_id'] === 'waba-9');
-        // Three templates submitted (the fourth already existed on the WABA), with positional placeholders.
-        Http::assertSentCount(1 + 1 + 1 + 1 + 1 + 1 + 3);
+        // Four templates submitted (the fifth already existed on the WABA), with positional placeholders.
+        Http::assertSentCount(1 + 1 + 1 + 1 + 1 + 1 + 4);
         Http::assertSent(fn (Request $r) => $r->method() === 'POST' && str_ends_with($r->url(), '/waba-9/message_templates')
             && $r['name'] === 'flowcrm_invoice_sent' && $r['category'] === 'UTILITY'
             && str_contains($r['components'][0]['text'], '{{1}}') && !str_contains($r['components'][0]['text'], 'customer_name'));
 
         // Platform templates mirrored for the business, usable once approved.
-        $this->assertSame(4, MessageTemplate::withoutGlobalScopes()->where('business_id', $business->id)->where('is_platform', true)->count());
+        $this->assertSame(5, MessageTemplate::withoutGlobalScopes()->where('business_id', $business->id)->where('is_platform', true)->count());
         $received = MessageTemplate::withoutGlobalScopes()->where('business_id', $business->id)->where('name', 'flowcrm_payment_received')->firstOrFail();
         $this->assertSame('approved', $received->status);
         $this->assertSame('tpl-existing', $received->meta_template_id);
@@ -147,7 +147,7 @@ class WhatsAppEmbeddedSignupTest extends TestCase
 
         // Retry once Meta is happy again.
         $this->actingAs($user)->postJson("/api/v1/whatsapp/connections/{$res->json('data.id')}/retry-setup")->assertOk()
-            ->assertJsonPath('message', 'Setup complete.')->assertJsonPath('data.templates_submitted', 3);
+            ->assertJsonPath('message', 'Setup complete.')->assertJsonPath('data.templates_submitted', 4);
         $this->assertNotNull(WhatsAppConnection::withoutGlobalScopes()->find($res->json('data.id'))->credit_line_attached_at);
     }
 

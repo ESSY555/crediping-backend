@@ -42,9 +42,10 @@ class WhatsAppCloudApi
         } catch (RequestException $e) {
             $error = $e->response?->json('error') ?? [];
             $retryAfter = $e->response?->header('Retry-After');
+            $code = (int) ($error['code'] ?? ($e->response ? $e->response->status() : 0));
             throw new WhatsAppApiException(
-                $error['message'] ?? $e->getMessage(),
-                (int) ($error['code'] ?? ($e->response ? $e->response->status() : 0)),
+                self::humanizeError((string) ($error['message'] ?? $e->getMessage()), $code),
+                $code,
                 $e->response ? $e->response->status() : 0,
                 $retryAfter !== null && is_numeric($retryAfter) ? (int) $retryAfter : null,
             );
@@ -259,6 +260,19 @@ class WhatsAppCloudApi
             'type' => 'text',
             'text' => ['preview_url' => false, 'body' => (string) $message->body],
         ];
+    }
+
+    /**
+     * Turn Meta error codes that operators hit with inbox free-text into a
+     * sentence they can act on. Template / broadcast payloads are unchanged.
+     */
+    public static function humanizeError(string $message, int $code): string
+    {
+        if ($code === 131047 || str_contains(strtolower($message), 'more than 24 hours')) {
+            return 'WhatsApp only allows free-text replies within 24 hours of the customer\'s last message. Choose an approved template to message them now.';
+        }
+
+        return $message;
     }
 }
 

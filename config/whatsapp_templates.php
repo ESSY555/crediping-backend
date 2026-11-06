@@ -36,5 +36,10 @@ return [
             'category' => 'utility',
             'content' => "Hello {{customer_name}}, {{business_name}} has received your payment of {{amount}} for invoice {{invoice_number}}. Thank you for your business.",
         ],
+        [
+            'name' => 'flowcrm_custom_message',
+            'category' => 'utility',
+            'content' => "Hello {{customer_name}}, {{business_name}} sent you a message: {{message}}. Reply to this message if you have any questions.",
+        ],
     ],
 ];

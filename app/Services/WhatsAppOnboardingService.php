@@ -160,6 +160,9 @@ class WhatsAppOnboardingService
             if ($remote) {
                 $template->meta_template_id = $remote['id'] ?? $template->meta_template_id;
                 $template->status = $this->mapStatus($remote['status'] ?? 'PENDING');
+                if (!empty($remote['language'])) {
+                    $template->language = $remote['language'];
+                }
                 $template->save();
                 continue;
             }
@@ -281,7 +284,7 @@ class WhatsAppOnboardingService
     private function mapStatus(string $metaStatus): string
     {
         return match (strtoupper($metaStatus)) {
-            'APPROVED' => 'approved',
+            'APPROVED', 'ACTIVE' => 'approved',
             'REJECTED' => 'rejected',
             'DISABLED', 'PAUSED' => 'disabled',
             default => 'pending',
@@ -298,6 +301,7 @@ class WhatsAppOnboardingService
             'amount', 'total', 'balance_due', 'balance', 'amount_paid' => 'NGN 45,000.00',
             'due_date' => 'Sep 30, 2026',
             'days_overdue' => '5',
+            'message' => 'Please confirm if you received invoice INV-0042.',
             default => 'example',
         };
     }

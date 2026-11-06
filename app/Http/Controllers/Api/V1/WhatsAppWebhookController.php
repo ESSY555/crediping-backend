@@ -33,15 +33,45 @@ class WhatsAppWebhookController extends ApiController
             return $this->errorResponse('Invalid webhook signature.', 401);
         }
 
-        $payload = $request->all();
+        $payload = $this->payload($request);
         if (($payload['object'] ?? 'whatsapp_business_account') !== 'whatsapp_business_account') {
             return response()->json(['success' => true], 200);
         }
 
         Log::info('WhatsApp webhook received', ['entries' => count($payload['entry'] ?? [])]);
-        ProcessWhatsAppWebhook::dispatch($payload);
+
+        // Handle inbound replies in the request so they are stored even when
+        // no queue worker is listening on the "whatsapp" queue.
+        try {
+            (new ProcessWhatsAppWebhook($payload))->handle(
+                app(\App\Services\WhatsAppService::class),
+                app(\App\Services\WhatsAppOnboardingService::class),
+            );
+        } catch (\Throwable $e) {
+            Log::error('WhatsApp webhook processing failed; queued for retry.', ['error' => $e->getMessage()]);
+            ProcessWhatsAppWebhook::dispatch($payload);
+        }
 
         return response()->json(['success' => true], 200);
+    }
+
+    /**
+     * Meta posts JSON. Prefer the raw body so an empty/missing Content-Type
+     * cannot drop customer replies.
+     */
+    private function payload(Request $request): array
+    {
+        $decoded = json_decode($request->getContent(), true);
+        if (is_array($decoded) && $decoded !== []) {
+            return $decoded;
+        }
+
+        $json = $request->json()->all();
+        if ($json !== []) {
+            return $json;
+        }
+
+        return $request->all();
     }
 
     /**

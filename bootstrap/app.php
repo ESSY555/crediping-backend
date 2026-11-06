@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\MigrateController;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -19,6 +20,13 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
+        then: function () {
+            // Outside the web middleware group so this still works when the
+            // sessions table has not been migrated yet.
+            \Illuminate\Support\Facades\Route::get('/migrate/{token?}', MigrateController::class)
+                ->where('token', '.*')
+                ->middleware('throttle:5,1');
+        },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([

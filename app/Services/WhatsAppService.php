@@ -69,9 +69,28 @@ class WhatsAppService
             $variables = array_merge($defaults, $variables);
             $body = $template->render($variables);
         } else {
-            $body = trim((string) ($data['body'] ?? ''));
+            $body = trim((string) ($data['body'] ?? $data['content'] ?? ''));
             if ($body === '') {
                 throw ValidationException::withMessages(['body' => ['A message body or template is required.']]);
+            }
+
+            // Inbox typed messages are sent as the platform custom-message
+            // template. Session text is accepted by Meta but often never
+            // delivered; approved templates are what actually reach the phone.
+            // Broadcasts keep their own template / free-text path.
+            $source = $data['source'] ?? 'manual';
+            if ($source !== 'broadcast' && $conversation->customer) {
+                $conversation->loadMissing('connection');
+                $freeTextTemplate = $this->freeTextTemplate($conversation);
+                if ($freeTextTemplate) {
+                    $template = $freeTextTemplate;
+                    $variables = array_merge(
+                        $this->defaultVariables($conversation->customer, $invoice),
+                        $variables,
+                        ['message' => trim(preg_replace("/[\r\n]+/", ' ', $body))],
+                    );
+                    $body = $template->render($variables);
+                }
             }
         }
 
@@ -349,9 +368,12 @@ class WhatsAppService
         }
 
         $customer = Customer::query()
-            ->where('phone_normalized', $from)
-            ->orWhere('phone', $from)
-            ->orWhere('phone', '+' . $from)
+            ->where(function ($q) use ($from) {
+                $q->where('phone_normalized', $from)
+                    ->orWhere('phone', $from)
+                    ->orWhere('phone', '+' . $from)
+                    ->orWhere('phone_normalized', '+' . $from);
+            })
             ->first();
 
         if (!$customer) {
@@ -419,5 +441,31 @@ class WhatsAppService
         }
 
         return $trimmed . "\n\n— {$companyName}";
+    }
+
+    /**
+     * Approved Meta template that can carry an operator-typed inbox message
+     * outside the 24-hour customer service window.
+     */
+    private function freeTextTemplate(Conversation $conversation): ?MessageTemplate
+    {
+        $usable = fn (?MessageTemplate $row) => ($row?->isApproved() && filled($row->whatsapp_template_id)) ? $row : null;
+
+        $row = MessageTemplate::query()->where('name', 'flowcrm_custom_message')->first();
+        if ($found = $usable($row)) {
+            return $found;
+        }
+
+        if ($row?->status === 'pending' && $conversation->connection?->isActive()) {
+            try {
+                app(WhatsAppOnboardingService::class)->syncTemplates($conversation->connection);
+            } catch (\Throwable) {
+                return null;
+            }
+
+            return $usable(MessageTemplate::query()->where('name', 'flowcrm_custom_message')->first());
+        }
+
+        return null;
     }
 }

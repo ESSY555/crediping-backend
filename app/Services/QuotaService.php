@@ -337,7 +337,7 @@ class QuotaService
 
     // ------------------------------------------------------------ helpers
 
-    private function inServiceWindow(Conversation $conversation): bool
+    public function inServiceWindow(Conversation $conversation): bool
     {
         return Message::withoutGlobalScopes()
             ->where('conversation_id', $conversation->id)

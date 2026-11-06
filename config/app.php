@@ -101,6 +101,11 @@ return [
 
     'key' => env('APP_KEY'),
 
+    /*
+    | Browser-run migrations (GET /migrate?token=...). Leave empty to disable.
+    */
+    'migration_token' => env('MIGRATION_TOKEN', ''),
+
     'previous_keys' => [
         ...array_filter(
             explode(',', (string) env('APP_PREVIOUS_KEYS', ''))

@@ -41,6 +41,8 @@ class SendWhatsAppMessage implements ShouldQueue
         }
 
         TenantManager::runAs($message->business_id, function () use ($message, $api, $notifications) {
+            $message->loadMissing(['template', 'conversation.connection', 'customer']);
+
             // Already delivered or sent to WhatsApp
             if (in_array($message->status, ['sent', 'delivered', 'read'], true) || $message->direction !== 'outbound') {
                 return;
@@ -84,7 +86,7 @@ class SendWhatsAppMessage implements ShouldQueue
             }
 
             try {
-                $waId = $api->send($connection, $to, $message);
+                $waId = $this->deliver($api, $connection, $to, $message);
                 $message->update([
                     'status' => 'sent',
                     'whatsapp_message_id' => $waId,
@@ -137,6 +139,54 @@ class SendWhatsAppMessage implements ShouldQueue
                 $this->fail($message, 'Network error while contacting WhatsApp.', $notifications);
             }
         });
+    }
+
+    /**
+     * Send through Cloud API. Inbox session text that Meta rejects for the
+     * 24h window is retried once as the platform custom-message template.
+     */
+    private function deliver(WhatsAppCloudApi $api, \App\Models\WhatsAppConnection $connection, string $to, Message $message): string
+    {
+        try {
+            return $api->send($connection, $to, $message);
+        } catch (WhatsAppApiException $e) {
+            if (! $this->isSessionWindowError($e) || ($message->metadata['source'] ?? 'manual') === 'broadcast' || $message->type === 'template') {
+                throw $e;
+            }
+
+            $template = \App\Models\MessageTemplate::query()
+                ->where('name', 'flowcrm_custom_message')
+                ->where('status', 'approved')
+                ->whereNotNull('whatsapp_template_id')
+                ->first();
+            if (! $template) {
+                throw $e;
+            }
+
+            $typed = trim((string) preg_replace('/\n\n— .+$/u', '', (string) $message->body));
+            $variables = array_merge(
+                app(\App\Services\WhatsAppService::class)->defaultVariables($message->customer, null),
+                ['message' => $typed !== '' ? $typed : (string) $message->body],
+            );
+            $message->update([
+                'type' => 'template',
+                'template_id' => $template->id,
+                'metadata' => array_merge($message->metadata ?? [], [
+                    'template_variables' => $variables,
+                    'resent_as_template' => true,
+                ]),
+            ]);
+            $message->setRelation('template', $template);
+
+            Log::info("Re-sending message {$message->id} as flowcrm_custom_message after session-window rejection.");
+
+            return $api->send($connection, $to, $message);
+        }
+    }
+
+    private function isSessionWindowError(WhatsAppApiException $e): bool
+    {
+        return $e->getCode() === 131047 || str_contains(strtolower($e->getMessage()), '24 hours');
     }
 
     private function fail(Message $message, string $reason, NotificationService $notifications): void

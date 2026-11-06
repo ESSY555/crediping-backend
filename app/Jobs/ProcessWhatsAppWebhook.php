@@ -36,8 +36,11 @@ class ProcessWhatsAppWebhook implements ShouldQueue
             foreach (data_get($entry, 'changes', []) as $change) {
                 $field = (string) data_get($change, 'field', 'messages');
                 $value = data_get($change, 'value', []);
+                if (! is_array($value)) {
+                    $value = [];
+                }
 
-                if ($field === 'messages') {
+                if ($field === '' || $field === 'messages') {
                     $this->handleMessages($service, $value);
                     continue;
                 }
