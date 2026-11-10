@@ -143,6 +143,12 @@ class WhatsAppConnectionController extends ApiController
             return $this->errorResponse('Setup can only be retried for numbers connected with "Connect WhatsApp".', 422);
         }
 
+        try {
+            $this->onboarding->resubscribeWebhooks($connection);
+        } catch (\Throwable) {
+            // Sending still works; inbound may stay on the app-level callback.
+        }
+
         $billing = $connection->credit_line_attached_at ? true : $this->onboarding->attachCreditLine($connection);
         $templates = $this->onboarding->syncTemplates($connection);
 

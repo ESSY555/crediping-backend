@@ -115,6 +115,38 @@ class WhatsAppMessagingTest extends TestCase
         $this->assertStringContainsString('Hello from the inbox', (string) \App\Models\Message::withoutGlobalScopes()->latest('id')->value('body'));
     }
 
+    public function test_inbox_free_text_inside_service_window_stays_session_text(): void
+    {
+        Queue::fake([SendWhatsAppMessage::class]);
+        [$user, $business] = $this->membership();
+        $this->connectionFor($business);
+        $customer = $this->customerFor($business);
+        $this->templateFor($business, [
+            'name' => 'flowcrm_custom_message',
+            'whatsapp_template_id' => 'flowcrm_custom_message',
+            'category' => 'utility',
+            'content' => 'Hello {{customer_name}}, {{business_name}} sent you a message: {{message}}.',
+        ]);
+
+        $conversation = $this->actingAs($user)->postJson('/api/v1/conversations', [
+            'customer_id' => $customer->id,
+        ])->assertCreated()->json('data');
+
+        $this->asTenant($business->id, fn () => \App\Models\Message::create([
+            'conversation_id' => $conversation['id'],
+            'customer_id' => $customer->id,
+            'direction' => 'inbound',
+            'type' => 'text',
+            'body' => 'Hi',
+            'status' => 'delivered',
+        ]));
+
+        $this->actingAs($user)->postJson('/api/v1/messages', [
+            'conversation_id' => $conversation['id'],
+            'content' => 'Thanks, I will send the invoice',
+        ])->assertCreated()->assertJsonPath('data.type', 'text');
+    }
+
     public function test_inbox_free_text_is_sent_as_custom_template(): void
     {
         Queue::fake([SendWhatsAppMessage::class]);
@@ -345,6 +377,34 @@ class WhatsAppMessagingTest extends TestCase
             'direction' => 'inbound',
             'body' => 'Yes I got it',
         ]);
+    }
+
+    public function test_inbound_reply_reuses_open_conversation_for_local_phone_format(): void
+    {
+        [$user, $business] = $this->membership();
+        $this->connectionFor($business, 'phone-old');
+        $connection = $this->connectionFor($business, 'phone-9');
+        $customer = $this->customerFor($business, ['phone' => '08166740794']);
+        $previous = \App\Models\WhatsAppConnection::withoutGlobalScopes()->where('phone_number_id', 'phone-old')->firstOrFail();
+        $conversation = $this->asTenant($business->id, fn () => \App\Models\Conversation::create([
+            'customer_id' => $customer->id,
+            'whatsapp_connection_id' => $previous->id,
+            'status' => 'open',
+        ]));
+
+        $message = $this->asTenant($business->id, fn () => app(\App\Services\WhatsAppService::class)->handleIncoming($connection, [
+            'from' => '2348166740794',
+            'id' => 'wamid.reply.split',
+            'type' => 'text',
+            'text' => ['body' => 'I will pay tomorrow'],
+        ]));
+
+        $this->assertNotNull($message);
+        $this->assertSame($conversation->id, $message->conversation_id);
+        $this->assertSame($customer->id, $message->customer_id);
+        $this->assertSame('I will pay tomorrow', $message->body);
+        $this->assertSame(1, \App\Models\Conversation::withoutGlobalScopes()->where('customer_id', $customer->id)->count());
+        $this->assertSame($connection->id, \App\Models\Conversation::withoutGlobalScopes()->find($conversation->id)?->whatsapp_connection_id);
     }
 
     public function test_webhook_processing_creates_inbound_messages_and_updates_statuses_idempotently(): void

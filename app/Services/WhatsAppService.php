@@ -43,6 +43,7 @@ class WhatsAppService
         $template = null;
         $variables = $data['template_variables'] ?? [];
         $invoice = $data['invoice'] ?? null;
+        $typedBody = null;
 
         if (!empty($data['template_id'])) {
             $template = MessageTemplate::query()->findOrFail($data['template_id']);
@@ -50,10 +51,12 @@ class WhatsAppService
                 throw ValidationException::withMessages(['template_id' => ["Template '{$template->name}' is not approved for sending."]]);
             }
 
+            $isCustomMessage = $this->isCustomMessageTemplate($template);
+
             if (!$invoice && !empty($data['invoice_id'])) {
                 $invoice = Invoice::query()->find($data['invoice_id']);
             }
-            if (!$invoice && $conversation->customer) {
+            if (!$isCustomMessage && !$invoice && $conversation->customer) {
                 $invoice = $conversation->customer->invoices()
                     ->whereIn('status', ['sent', 'partially_paid', 'overdue', 'paid'])
                     ->latest('id')
@@ -61,33 +64,39 @@ class WhatsAppService
                     ?? $conversation->customer->invoices()->latest('id')->first();
             }
 
-            $defaults = $this->defaultVariables($conversation->customer, $invoice);
+            $defaults = $this->defaultVariables($conversation->customer, $isCustomMessage ? null : $invoice);
             if (str_contains($template->name, 'payment_received') && !empty($defaults['payment_amount']) && empty($variables['amount'])) {
                 $defaults['amount'] = $defaults['payment_amount'];
             }
 
             $variables = array_merge($defaults, $variables);
+            if ($isCustomMessage) {
+                $typedBody = trim((string) ($variables['message'] ?? $data['body'] ?? $data['content'] ?? ''));
+                $variables['message'] = WhatsAppCloudApi::sanitizeTemplateParam($typedBody);
+            }
             $body = $template->render($variables);
         } else {
             $body = trim((string) ($data['body'] ?? $data['content'] ?? ''));
             if ($body === '') {
                 throw ValidationException::withMessages(['body' => ['A message body or template is required.']]);
             }
+            $typedBody = $body;
 
-            // Inbox typed messages are sent as the platform custom-message
-            // template. Session text is accepted by Meta but often never
-            // delivered; approved templates are what actually reach the phone.
-            // Broadcasts keep their own template / free-text path.
+            // Outside the 24h window Meta will not deliver session text. Inbox
+            // typed messages are sent as the platform custom-message template.
+            // Replies inside the window stay native text. Broadcasts keep their
+            // own template / free-text path.
             $source = $data['source'] ?? 'manual';
-            if ($source !== 'broadcast' && $conversation->customer) {
+            $inWindow = $this->quota->inServiceWindow($conversation);
+            if ($source !== 'broadcast' && $conversation->customer && ! $inWindow) {
                 $conversation->loadMissing('connection');
                 $freeTextTemplate = $this->freeTextTemplate($conversation);
                 if ($freeTextTemplate) {
                     $template = $freeTextTemplate;
                     $variables = array_merge(
-                        $this->defaultVariables($conversation->customer, $invoice),
+                        $this->defaultVariables($conversation->customer, null),
                         $variables,
-                        ['message' => trim(preg_replace("/[\r\n]+/", ' ', $body))],
+                        ['message' => WhatsAppCloudApi::sanitizeTemplateParam($body)],
                     );
                     $body = $template->render($variables);
                 }
@@ -102,7 +111,7 @@ class WhatsAppService
         $category = $this->quota->categoryFor($conversation, $template, $data['source'] ?? 'manual');
         $billingInfo = $this->quota->determineBillingSource($category);
 
-        return DB::transaction(function () use ($data, $conversation, $template, $variables, $body, $category, $billingInfo, $business, $invoice) {
+        return DB::transaction(function () use ($data, $conversation, $template, $variables, $body, $category, $billingInfo, $business, $invoice, $typedBody) {
             $message = Message::create([
                 'conversation_id' => $conversation->id,
                 'customer_id' => $conversation->customer_id,
@@ -117,8 +126,9 @@ class WhatsAppService
                 'metadata' => array_filter([
                     'template_variables' => $template ? $variables : null,
                     'source' => $data['source'] ?? 'manual',
+                    'typed_body' => $typedBody,
                     'invoice_id' => $invoice?->id ?? (isset($data['invoice']) ? $data['invoice']->id : null),
-                ]),
+                ], fn ($value) => $value !== null && $value !== '' && $value !== []),
             ]);
 
             // If billed from wallet, atomically debit the wallet within the transaction
@@ -367,14 +377,7 @@ class WhatsAppService
             return null;
         }
 
-        $customer = Customer::query()
-            ->where(function ($q) use ($from) {
-                $q->where('phone_normalized', $from)
-                    ->orWhere('phone', $from)
-                    ->orWhere('phone', '+' . $from)
-                    ->orWhere('phone_normalized', '+' . $from);
-            })
-            ->first();
+        $customer = Customer::findByWhatsAppPhone($from);
 
         if (!$customer) {
             // Unknown senders become customers so the conversation is not lost.
@@ -383,16 +386,35 @@ class WhatsAppService
             $customer->update(['phone_normalized' => $from]);
         }
 
-        $conversation = Conversation::query()->firstOrCreate(
-            ['customer_id' => $customer->id, 'whatsapp_connection_id' => $connection->id],
-            ['status' => 'open'],
-        );
+        // Always land on the thread the agent already has open — not a second
+        // conversation keyed only by connection id.
+        $conversation = Conversation::query()
+            ->where('customer_id', $customer->id)
+            ->orderByDesc('last_message_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($conversation) {
+            $conversation->fill([
+                'status' => 'open',
+                'whatsapp_connection_id' => $connection->id,
+            ]);
+        } else {
+            $conversation = Conversation::query()->create([
+                'customer_id' => $customer->id,
+                'whatsapp_connection_id' => $connection->id,
+                'status' => 'open',
+            ]);
+        }
 
         $type = data_get($incoming, 'type', 'text');
         $body = data_get($incoming, 'text.body')
+            ?? (is_string(data_get($incoming, 'text')) ? data_get($incoming, 'text') : null)
             ?? data_get($incoming, 'button.text')
             ?? data_get($incoming, 'interactive.button_reply.title')
+            ?? data_get($incoming, 'interactive.list_reply.title')
             ?? data_get($incoming, "{$type}.caption")
+            ?? data_get($incoming, 'reaction.emoji')
             ?? "[{$type}]";
 
         $message = Message::query()->firstOrCreate(
@@ -410,7 +432,11 @@ class WhatsAppService
             ],
         );
 
-        $conversation->update(['last_message_at' => now(), 'status' => 'open']);
+        $conversation->update([
+            'last_message_at' => now(),
+            'status' => 'open',
+            'whatsapp_connection_id' => $connection->id,
+        ]);
 
         return $message;
     }
@@ -441,6 +467,12 @@ class WhatsAppService
         }
 
         return $trimmed . "\n\n— {$companyName}";
+    }
+
+    private function isCustomMessageTemplate(MessageTemplate $template): bool
+    {
+        return $template->name === 'flowcrm_custom_message'
+            || $template->whatsapp_template_id === 'flowcrm_custom_message';
     }
 
     /**

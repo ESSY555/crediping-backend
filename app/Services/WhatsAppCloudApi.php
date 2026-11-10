@@ -6,6 +6,7 @@ use App\Models\Message;
 use App\Models\WhatsAppConnection;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -136,7 +137,35 @@ class WhatsAppCloudApi
     /** Route the WABA's webhooks (messages, statuses, template updates) to this app. */
     public function subscribeApp(string $token, string $wabaId): void
     {
+        $callback = $this->webhookCallbackUrl();
+        $verify = (string) config('services.whatsapp.verify_token');
+
+        if ($callback && $verify !== '') {
+            try {
+                $this->call(fn () => Http::withToken($token)->acceptJson()->timeout(15)
+                    ->post("{$this->baseUrl()}/{$wabaId}/subscribed_apps", [
+                        'override_callback_uri' => $callback,
+                        'verify_token' => $verify,
+                    ]));
+
+                return;
+            } catch (WhatsAppApiException $e) {
+                Log::warning("WhatsApp webhook override failed for WABA {$wabaId}: {$e->getMessage()}");
+            }
+        }
+
         $this->call(fn () => Http::withToken($token)->acceptJson()->timeout(15)->post("{$this->baseUrl()}/{$wabaId}/subscribed_apps"));
+    }
+
+    /** Public HTTPS webhook Meta can reach. Local http:// URLs are skipped. */
+    private function webhookCallbackUrl(): ?string
+    {
+        $base = rtrim((string) config('app.url'), '/');
+        if (! str_starts_with($base, 'https://')) {
+            return null;
+        }
+
+        return $base . '/api/v1/webhooks/whatsapp';
     }
 
     /**
@@ -233,12 +262,7 @@ class WhatsAppCloudApi
             $variables = $message->metadata['template_variables'] ?? [];
             $parameters = [];
             foreach ($template->placeholders() as $name) {
-                $val = trim((string) ($variables[$name] ?? ''));
-                if ($val === '') {
-                    // Meta strictly disallows empty parameter text with error #131008
-                    $val = '-';
-                }
-                $parameters[] = ['type' => 'text', 'text' => $val];
+                $parameters[] = ['type' => 'text', 'text' => self::sanitizeTemplateParam($variables[$name] ?? '')];
             }
 
             return [
@@ -273,6 +297,21 @@ class WhatsAppCloudApi
         }
 
         return $message;
+    }
+
+    /**
+     * Meta rejects template parameters that are empty, contain newlines/tabs,
+     * or run longer than 1024 characters (#131008 / #132012).
+     */
+    public static function sanitizeTemplateParam(mixed $value): string
+    {
+        $val = trim(preg_replace('/[\r\n\t]+/', ' ', (string) $value) ?? '');
+        $val = preg_replace('/ {5,}/', '    ', $val) ?? $val;
+        if ($val === '') {
+            return '-';
+        }
+
+        return mb_strlen($val) > 1024 ? mb_substr($val, 0, 1024) : $val;
     }
 }
 

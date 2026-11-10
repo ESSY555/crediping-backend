@@ -38,7 +38,7 @@ class SendMessageRequest extends FormRequest
             'template_id' => ['nullable', 'integer', Rule::exists('message_templates', 'id')->where('business_id', $businessId)],
             'invoice_id' => ['nullable', 'integer', Rule::exists('invoices', 'id')->where('business_id', $businessId)],
             'template_variables' => ['nullable', 'array'],
-            'template_variables.*' => ['nullable', 'string', 'max:1000'],
+            'template_variables.*' => ['nullable', 'string', 'max:1024'],
         ];
     }
 

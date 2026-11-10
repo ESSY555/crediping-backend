@@ -71,7 +71,7 @@ class WhatsAppOnboardingService
 
         $this->assertNotClaimedElsewhere($business, $phone['id']);
 
-        // 3. Webhook
+        // 3. Webhook (also used by retry-setup so inbound replies keep arriving)
         $this->api->subscribeApp($token, $wabaId);
 
         // 4. Registration (two-step PIN generated and kept for re-registration)
@@ -112,6 +112,16 @@ class WhatsAppOnboardingService
         $this->syncTemplates($connection);
 
         return $connection->fresh();
+    }
+
+    public function resubscribeWebhooks(WhatsAppConnection $connection): void
+    {
+        if (!$connection->business_account_id || !$connection->access_token_encrypted) {
+            return;
+        }
+
+        $this->api->subscribeApp($connection->access_token_encrypted, $connection->business_account_id);
+        $connection->update(['webhook_subscribed_at' => now()]);
     }
 
     /** Best-effort: bill this WABA to the platform's credit line. */

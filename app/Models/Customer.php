@@ -92,4 +92,30 @@ class Customer extends Model
     {
         return self::normalizePhone($this->phone);
     }
+
+    /**
+     * Find the workspace customer Meta is writing from. Matches canonical
+     * 234… ids, +234…, and local 080… numbers stored on the customer record.
+     */
+    public static function findByWhatsAppPhone(string $from): ?self
+    {
+        $normalized = self::normalizePhone($from) ?? preg_replace('/\D+/', '', $from);
+        if ($normalized === '') {
+            return null;
+        }
+
+        $candidates = array_values(array_unique(array_filter([
+            $normalized,
+            $from,
+            '+' . $normalized,
+            '+' . ltrim($from, '+'),
+            (str_starts_with($normalized, '234') && strlen($normalized) === 13) ? '0' . substr($normalized, 3) : null,
+        ])));
+
+        return static::query()
+            ->where(function ($q) use ($candidates) {
+                $q->whereIn('phone_normalized', $candidates)->orWhereIn('phone', $candidates);
+            })
+            ->first();
+    }
 }
