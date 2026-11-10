@@ -220,10 +220,28 @@ class WhatsAppMessagingTest extends TestCase
         $draft = $this->templateFor($business, ['status' => 'draft']);
 
         $this->actingAs($user)->postJson('/api/v1/messages', ['customer_id' => $customer->id, 'template_id' => $approved->id, 'template_variables' => ['code' => '42']])
-            ->assertCreated()->assertJsonPath('data.body', "Hi Amaka, code 42.\n\n— {$business->name}")->assertJsonPath('data.template_id', $approved->id);
+            ->assertCreated()->assertJsonPath('data.body', "Hi Amaka, code 42.\n\nfrom {$business->name}")->assertJsonPath('data.template_id', $approved->id);
 
         $this->actingAs($user)->postJson('/api/v1/messages', ['customer_id' => $customer->id, 'template_id' => $draft->id])
             ->assertUnprocessable()->assertJsonValidationErrors('template_id');
+    }
+
+    public function test_message_signature_includes_business_phone(): void
+    {
+        Queue::fake();
+        [$user, $business] = $this->membership();
+        $business->update(['phone' => '+234 801 234 5678']);
+        $this->connectionFor($business);
+        $customer = $this->customerFor($business, ['name' => 'Amaka']);
+        $template = $this->templateFor($business, ['content' => 'Hi {{customer_name}}.']);
+
+        $this->actingAs($user)->postJson('/api/v1/messages', [
+            'customer_id' => $customer->id,
+            'template_id' => $template->id,
+        ])->assertCreated()->assertJsonPath(
+            'data.body',
+            "Hi Amaka.\n\nfrom {$business->name}\n+234 801 234 5678",
+        );
     }
 
     public function test_template_message_auto_populates_invoice_and_payment_variables(): void
@@ -290,6 +308,33 @@ class WhatsAppMessagingTest extends TestCase
         $retriedBody = $retryResponse->json('data.body');
         $this->assertStringContainsString('INV-2026-001', $retriedBody);
         $this->assertStringContainsString('15,000.00', $retriedBody);
+    }
+
+    public function test_overdue_template_uses_calendar_days_past_due(): void
+    {
+        Queue::fake();
+        [$user, $business] = $this->membership();
+        $this->connectionFor($business);
+        $customer = $this->customerFor($business, ['name' => 'Adewumi Israel']);
+        $this->invoiceFor($business, $customer, $user, 5000, [
+            'invoice_number' => 'INV-2026-000001',
+            'due_date' => today()->subDays(11)->toDateString(),
+            'status' => 'partially_paid',
+        ]);
+
+        $template = $this->templateFor($business, [
+            'name' => 'flowcrm_payment_overdue',
+            'whatsapp_template_id' => 'flowcrm_payment_overdue',
+            'content' => 'Hello {{customer_name}}, invoice {{invoice_number}} from {{business_name}} is {{days_overdue}} day(s) overdue with a balance of {{balance_due}}. Please make payment or reply to arrange one.',
+        ]);
+
+        $body = $this->actingAs($user)->postJson('/api/v1/messages', [
+            'customer_id' => $customer->id,
+            'template_id' => $template->id,
+        ])->assertCreated()->json('data.body');
+
+        $this->assertStringContainsString('is 11 day(s) overdue', $body);
+        $this->assertStringContainsString('INV-2026-000001', $body);
     }
 
     // -------------------------------------------------------- conversations

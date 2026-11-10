@@ -49,9 +49,16 @@ class Invoice extends Model
 
     public function daysOverdue(): int
     {
-        if (!$this->due_date || $this->due_date->isToday() || $this->due_date->isFuture()) {
+        if (!$this->due_date) {
             return 0;
         }
-        return (int) $this->due_date->copy()->startOfDay()->diffInDays(today());
+
+        $due = $this->due_date->copy()->startOfDay();
+        $today = today()->startOfDay();
+        if ($due->greaterThanOrEqualTo($today)) {
+            return 0;
+        }
+
+        return (int) $due->diffInDays($today, true);
     }
 }

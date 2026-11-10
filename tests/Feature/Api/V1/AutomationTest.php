@@ -119,7 +119,7 @@ class AutomationTest extends TestCase
 
         (new SendScheduledMessage($scheduled['id']))->handle(app(\App\Services\ScheduledMessageService::class));
         $this->assertDatabaseHas('scheduled_messages', ['id' => $scheduled['id'], 'status' => 'sent']);
-        $this->assertDatabaseHas('messages', ['business_id' => $business->id, 'customer_id' => $customer->id, 'body' => "Updated\n\n— {$business->name}", 'status' => 'queued']);
+        $this->assertDatabaseHas('messages', ['business_id' => $business->id, 'customer_id' => $customer->id, 'body' => "Updated\n\nfrom {$business->name}", 'status' => 'queued']);
         $this->assertDatabaseHas('notifications', ['business_id' => $business->id, 'type' => 'scheduled_message_sent']);
 
         $this->actingAs($user)->postJson("/api/v1/scheduled-messages/{$scheduled['id']}/cancel")->assertUnprocessable();

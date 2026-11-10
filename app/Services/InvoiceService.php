@@ -244,8 +244,7 @@ class InvoiceService
         return "Hello {$v['customer_name']},\n\nInvoice {$v['invoice_number']} from {$v['business_name']} is ready.\n"
             . "Total: {$v['total']}\nAmount paid: {$v['amount_paid']}\nBalance due: {$v['balance_due']}\n"
             . ($v['due_date'] ? "Due date: {$v['due_date']}\n" : '')
-            . "\nThank you for your business."
-            . ($v['business_name'] ? "\n\n— {$v['business_name']}" : '');
+            . "\nThank you for your business.";
     }
 
     private function defaultReminderMessage(Invoice $invoice): string
@@ -255,7 +254,6 @@ class InvoiceService
 
         return "Hello {$v['customer_name']},\n\nThis is a friendly reminder that invoice {$v['invoice_number']} "
             . ($overdue > 0 ? "is {$overdue} day(s) overdue" : ($v['due_date'] ? "is due on {$v['due_date']}" : 'is awaiting payment'))
-            . ".\nOutstanding balance: {$v['balance_due']}\n\nKindly arrange payment at your earliest convenience."
-            . ($v['business_name'] ? "\n\n— {$v['business_name']}" : '');
+            . ".\nOutstanding balance: {$v['balance_due']}\n\nKindly arrange payment at your earliest convenience.";
     }
 }

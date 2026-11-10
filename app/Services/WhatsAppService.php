@@ -104,8 +104,12 @@ class WhatsAppService
         }
 
         $business = $conversation->customer?->business ?: Business::query()->find(TenantManager::businessId());
-        $companyName = $business?->name;
-        $body = $this->appendSignature($body, $companyName);
+        $body = $this->appendSignature($body, $business?->name, $business?->phone);
+        if ($template && $this->isCustomMessageTemplate($template) && isset($variables['message'])) {
+            $variables['message'] = WhatsAppCloudApi::sanitizeTemplateParam(
+                $this->appendSignature((string) ($typedBody ?: $variables['message']), $business?->name, $business?->phone),
+            );
+        }
 
         // Plan and wallet enforcement happens here so every send path is covered.
         $category = $this->quota->categoryFor($conversation, $template, $data['source'] ?? 'manual');
@@ -195,7 +199,7 @@ class WhatsAppService
                 $newVars = array_merge($defaults, array_filter($existingVars, fn ($v) => trim((string) $v) !== ''));
                 $body = $template->render($newVars);
                 $business = $customer->business ?: Business::query()->find(TenantManager::businessId());
-                $body = $this->appendSignature($body, $business?->name);
+                $body = $this->appendSignature($body, $business?->name, $business?->phone);
 
                 $metadata = $message->metadata ?? [];
                 $metadata['template_variables'] = $newVars;
@@ -255,6 +259,7 @@ class WhatsAppService
             'business_name' => $business?->name,
             'company' => $business?->name,
             'company_name' => $business?->name,
+            'business_phone' => $business?->phone,
             'currency' => $currency,
         ];
 
@@ -442,31 +447,39 @@ class WhatsAppService
     }
 
     /**
-     * Ensure every outgoing message automatically ends with the sending company's name,
-     * avoiding duplicate signatures.
+     * Ensure every outgoing message ends with the sending company's name and
+     * phone, without duplicating an existing signature.
      */
-    public function appendSignature(string $body, ?string $companyName): string
+    public function appendSignature(string $body, ?string $companyName, ?string $companyPhone = null): string
     {
         $companyName = trim((string) $companyName);
-        if ($companyName === '') {
+        $companyPhone = trim((string) $companyPhone);
+        if ($companyName === '' && $companyPhone === '') {
             return $body;
         }
 
         $trimmed = rtrim($body);
-        $escaped = preg_quote($companyName, '/');
+        $phonePattern = $companyPhone !== ''
+            ? preg_quote($companyPhone, '/')
+            : '\+?\d[\d\s().-]{5,}';
 
-        // Check if the body already ends with the company's name as a signature:
-        // e.g. "— Company", "-- Company", "- Company", "\nCompany"
-        if (preg_match('/(?:[\—\-\–]{1,2}\s*' . $escaped . '|\n\s*' . $escaped . ')$/iu', $trimmed)) {
-            // If it ends with raw "\nCompanyName" without the dash, normalize to "\n\n— CompanyName"
-            if (preg_match('/(?<![\—\-\–])\n+\s*' . $escaped . '$/iu', $trimmed)) {
-                $withoutName = preg_replace('/\n+\s*' . $escaped . '$/iu', '', $trimmed);
-                return rtrim($withoutName) . "\n\n— {$companyName}";
-            }
-            return $trimmed;
+        if ($companyName !== '') {
+            $escaped = preg_quote($companyName, '/');
+            $trimmed = rtrim((string) preg_replace(
+                '/(?:\n+)?(?:(?:from\s+)|[\—\-\–]{1,2}\s*)' . $escaped . '(?:\n+' . $phonePattern . ')?$/iu',
+                '',
+                $trimmed,
+            ));
+        } elseif ($companyPhone !== '') {
+            $trimmed = rtrim((string) preg_replace('/(?:\n+)' . $phonePattern . '$/u', '', $trimmed));
         }
 
-        return $trimmed . "\n\n— {$companyName}";
+        $block = $companyName !== '' ? "from {$companyName}" : '';
+        if ($companyPhone !== '') {
+            $block = $block !== '' ? $block . "\n{$companyPhone}" : $companyPhone;
+        }
+
+        return $trimmed . "\n\n" . $block;
     }
 
     private function isCustomMessageTemplate(MessageTemplate $template): bool

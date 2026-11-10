@@ -50,7 +50,7 @@ class BusinessController extends ApiController
      */
     public function uploadLogo(Request $request)
     {
-        $request->validate(['logo' => ['required', 'image', 'mimes:png,jpg,jpeg,webp,svg', 'max:2048']]);
+        $request->validate(['logo' => ['required', 'file', 'mimes:png,jpg,jpeg,webp,svg', 'max:2048']]);
 
         $business = $this->business();
         if ($business->logo && Storage::disk('public')->exists($business->logo)) {
@@ -58,6 +58,7 @@ class BusinessController extends ApiController
         }
 
         $path = $request->file('logo')->store("logos/business_{$business->id}", 'public');
+        Storage::disk('public')->setVisibility($path, 'public');
         $business->update(['logo' => $path]);
 
         return $this->successResponse('Logo uploaded successfully.', ['logo' => $path, 'logo_url' => $this->logoUrl($business)]);
@@ -119,9 +120,10 @@ class BusinessController extends ApiController
         if (!$business->logo) {
             return null;
         }
-        if (str_starts_with($business->logo, 'http')) {
+        if (str_starts_with($business->logo, 'http://') || str_starts_with($business->logo, 'https://')) {
             return $business->logo;
         }
-        return Storage::disk('public')->url($business->logo);
+
+        return url('/api/v1/media/'.$business->logo);
     }
 }

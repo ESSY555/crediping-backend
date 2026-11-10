@@ -5,6 +5,8 @@ namespace Tests\Feature\Api\V1;
 use App\Models\Business;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class BusinessSettingsApiTest extends TestCase
@@ -26,13 +28,15 @@ class BusinessSettingsApiTest extends TestCase
 
         $this->actingAs($user)->putJson('/api/v1/business', [
             'name' => 'Updated Name',
+            'phone' => '+234 809 111 2222',
             'slug' => 'attacker-slug',
             'status' => 'cancelled',
-        ])->assertOk()->assertJsonPath('data.name', 'Updated Name');
+        ])->assertOk()->assertJsonPath('data.name', 'Updated Name')->assertJsonPath('data.phone', '+234 809 111 2222');
 
         $this->assertDatabaseHas('businesses', [
             'id' => $business->id,
             'name' => 'Updated Name',
+            'phone' => '+234 809 111 2222',
             'slug' => 'original',
             'status' => 'trial',
         ]);
@@ -51,6 +55,26 @@ class BusinessSettingsApiTest extends TestCase
             'key' => 'invoice_prefix',
             'value' => 'INV',
         ]);
+    }
+
+    public function test_owner_can_upload_and_view_business_logo(): void
+    {
+        Storage::fake('public');
+        [$user] = $this->membership();
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+        $file = UploadedFile::fake()->createWithContent('logo.png', $png);
+
+        $uploaded = $this->actingAs($user)->post('/api/v1/business/logo', ['logo' => $file], ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->json('data');
+
+        $this->assertNotEmpty($uploaded['logo']);
+        $this->assertStringContainsString('/api/v1/media/'.$uploaded['logo'], $uploaded['logo_url']);
+        Storage::disk('public')->assertExists($uploaded['logo']);
+
+        $this->get('/api/v1/media/'.$uploaded['logo'])->assertOk();
+        $this->actingAs($user)->getJson('/api/v1/business')->assertOk()->assertJsonPath('data.logo_url', $uploaded['logo_url']);
     }
 
     public function test_inactive_membership_cannot_access_business_data(): void

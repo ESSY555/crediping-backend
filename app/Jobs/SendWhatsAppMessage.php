@@ -163,7 +163,7 @@ class SendWhatsAppMessage implements ShouldQueue
                 throw $e;
             }
 
-            $typed = trim((string) preg_replace('/\n\n— .+$/u', '', (string) $message->body));
+            $typed = trim((string) preg_replace('/\n\n(?:— |from ).*(?:\n[^\n]+)?$/iu', '', (string) $message->body));
             $variables = array_merge(
                 app(\App\Services\WhatsAppService::class)->defaultVariables($message->customer, null),
                 ['message' => \App\Services\WhatsAppCloudApi::sanitizeTemplateParam($typed !== '' ? $typed : (string) $message->body)],

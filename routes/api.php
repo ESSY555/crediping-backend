@@ -35,6 +35,16 @@ use App\Http\Middleware\SetTenantContext;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
+    // Public logo files. Served from the API so the frontend does not depend
+    // on `php artisan storage:link` (often missing on Windows and cPanel).
+    Route::get('media/{path}', function (string $path) {
+        abort_unless(! str_contains($path, '..') && str_starts_with($path, 'logos/'), 404);
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        abort_unless($disk->exists($path), 404);
+
+        return response()->file($disk->path($path));
+    })->where('path', '.*');
+
     // ---------------------------------------------------------------- Auth
     Route::prefix('auth')->group(function () {
         Route::post('register', [AuthController::class, 'register'])->middleware('throttle:5,1');
