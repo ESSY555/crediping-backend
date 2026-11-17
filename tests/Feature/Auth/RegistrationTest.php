@@ -2,8 +2,9 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Mail\VerifyEmailOtpMail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Foundation\Testing\WithFaker;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class RegistrationTest extends TestCase
@@ -12,6 +13,8 @@ class RegistrationTest extends TestCase
 
     public function test_user_can_register_and_creates_business()
     {
+        Mail::fake();
+
         $response = $this->postJson('/api/v1/auth/register', [
             'name' => 'John Doe',
             'email' => 'john@example.com',
@@ -27,6 +30,8 @@ class RegistrationTest extends TestCase
         $this->assertDatabaseHas('businesses', ['name' => 'Doe Inc']);
         
         $user = \App\Models\User::where('email', 'john@example.com')->first();
+        $this->assertNull($user->email_verified_at);
+        Mail::assertSent(VerifyEmailOtpMail::class, fn (VerifyEmailOtpMail $mail) => $mail->hasTo('john@example.com'));
         $this->assertDatabaseHas('business_users', [
             'user_id' => $user->id,
             'role' => 'owner',

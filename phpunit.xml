@@ -33,5 +33,6 @@
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
         <env name="MIGRATION_TOKEN" value="testing-migrate-token"/>
+        <env name="MAIL_MAILER" value="array"/>
     </php>
 </phpunit>

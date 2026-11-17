@@ -32,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'business.role' => \App\Http\Middleware\EnsureBusinessRole::class,
             'super.admin' => \App\Http\Middleware\EnsureSuperAdmin::class,
+            'verified' => \App\Http\Middleware\EnsureEmailIsVerified::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

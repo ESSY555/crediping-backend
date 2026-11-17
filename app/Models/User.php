@@ -19,14 +19,22 @@ class User extends Authenticatable implements MustVerifyEmail
 
     protected $fillable = ['name', 'email', 'phone', 'password'];
 
+    public function sendEmailVerificationNotification(): void
+    {
+        app(\App\Services\EmailOtpService::class)->send($this);
+    }
+
     // is_super_admin is deliberately not fillable: it is granted from the console only.
 
-    protected $hidden = ['password', 'remember_token'];
+    protected $hidden = ['password', 'remember_token', 'email_otp_hash', 'password_otp_hash'];
 
     protected function casts(): array
     {
         return [
             'email_verified_at' => 'datetime',
+            'email_otp_expires_at' => 'datetime',
+            'password_otp_expires_at' => 'datetime',
+            'password_otp_sent_at' => 'datetime',
             'password' => 'hashed',
             'is_super_admin' => 'boolean',
         ];

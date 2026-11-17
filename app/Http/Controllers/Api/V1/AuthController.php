@@ -2,14 +2,18 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\Auth\ChangePasswordRequest;
 use App\Http\Requests\Auth\ForgotPasswordRequest;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Http\Requests\Auth\RegisterRequest;
+use App\Http\Requests\Auth\RequestPasswordOtpRequest;
 use App\Http\Requests\Auth\ResetPasswordRequest;
 use App\Http\Middleware\EnsureSuperAdmin;
 use App\Models\Business;
 use App\Models\BusinessSetting;
 use App\Models\User;
+use App\Services\EmailOtpService;
+use App\Services\PasswordOtpService;
 use App\Tenancy\TenantManager;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Auth\Events\Registered;
@@ -17,6 +21,7 @@ use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -78,7 +83,7 @@ class AuthController extends ApiController
         event(new Registered($user));
         $token = $user->createToken('auth_token')->plainTextToken;
 
-        return $this->successResponse('Successfully registered.', $this->authPayload($user, $token), 201);
+        return $this->successResponse('Successfully registered. Check your email for a verification code.', $this->authPayload($user->fresh(), $token), 201);
     }
 
     public function login(LoginRequest $request)
@@ -96,6 +101,10 @@ class AuthController extends ApiController
         // Console-only accounts have no workspace to land in.
         if ($user->isSuperAdmin() && !$user->businesses()->wherePivot('status', 'active')->exists()) {
             return $this->errorResponse('This is an administrator account. Sign in at /admin/login instead.', 403);
+        }
+
+        if (! $user->hasVerifiedEmail() && ! $user->isSuperAdmin()) {
+            app(EmailOtpService::class)->send($user, false);
         }
 
         $token = $user->createToken($validated['device_name'] ?? 'web')->plainTextToken;
@@ -181,6 +190,59 @@ class AuthController extends ApiController
         return $this->successResponse('Password reset successfully. Please log in again.');
     }
 
+    public function requestPasswordOtp(RequestPasswordOtpRequest $request, PasswordOtpService $otp)
+    {
+        $user = $request->user();
+        $this->assertCurrentPassword($user, $request->validated('current_password'));
+        $otp->send($user);
+
+        return $this->successResponse('A verification code was sent to your email.');
+    }
+
+    public function changePassword(ChangePasswordRequest $request, PasswordOtpService $otp)
+    {
+        $user = $request->user();
+        $validated = $request->validated();
+
+        $this->assertCurrentPassword($user, $validated['current_password']);
+
+        if (Hash::check($validated['password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'password' => ['Choose a password that is different from your current password.'],
+            ]);
+        }
+
+        $otp->verify($user, $validated['otp']);
+
+        $user->forceFill([
+            'password' => $validated['password'],
+            'remember_token' => Str::random(60),
+        ])->save();
+
+        $otp->clear($user);
+
+        $current = $user->currentAccessToken();
+        $user->tokens()
+            ->when(
+                $current instanceof \Laravel\Sanctum\PersonalAccessToken,
+                fn ($query) => $query->where('id', '!=', $current->id)
+            )
+            ->delete();
+
+        event(new PasswordReset($user));
+
+        return $this->successResponse('Password updated successfully.');
+    }
+
+    private function assertCurrentPassword(User $user, string $password): void
+    {
+        if (! Hash::check($password, $user->password)) {
+            throw ValidationException::withMessages([
+                'current_password' => ['The current password is incorrect.'],
+            ]);
+        }
+    }
+
     public function verifyEmail(Request $request, int $id, string $hash)
     {
         $user = $request->user();
@@ -197,17 +259,34 @@ class AuthController extends ApiController
         return $this->successResponse('Email verified successfully.');
     }
 
+    public function verifyOtp(Request $request, EmailOtpService $otp)
+    {
+        $validated = $request->validate([
+            'otp' => ['required', 'string', 'size:6'],
+        ]);
+
+        $otp->verify($request->user(), $validated['otp']);
+
+        return $this->successResponse('Email verified successfully.', $this->authPayload($request->user()->fresh()));
+    }
+
     public function resendVerification(Request $request)
     {
         $user = $request->user();
 
+        Log::info('Email OTP resend requested.', [
+            'user_id' => $user->id,
+            'email' => $user->email,
+            'already_verified' => $user->hasVerifiedEmail(),
+        ]);
+
         if ($user->hasVerifiedEmail()) {
-            return $this->successResponse('Email is already verified.');
+            return $this->successResponse('Email is already verified.', $this->authPayload($user));
         }
 
         $user->sendEmailVerificationNotification();
 
-        return $this->successResponse('Verification email sent.');
+        return $this->successResponse('A new verification code was sent to your email.');
     }
 
     /**

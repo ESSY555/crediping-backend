@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\Admin\PaymentSettingController as AdminPaymentSe
 use App\Http\Controllers\Api\V1\Admin\PlanController as AdminPlanController;
 use App\Http\Controllers\Api\V1\Admin\SystemController as AdminSystemController;
 use App\Http\Controllers\Api\V1\Admin\TopupRequestController as AdminTopupRequestController;
+use App\Http\Controllers\Api\V1\Admin\BulkEmailController;
 use App\Http\Controllers\Api\V1\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
@@ -59,13 +60,18 @@ Route::prefix('v1')->group(function () {
             Route::get('email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
                 ->middleware(['signed', 'throttle:6,1'])
                 ->name('verification.verify');
+            Route::post('email/verify-otp', [AuthController::class, 'verifyOtp'])->middleware('throttle:10,1');
             Route::post('email/verification-notification', [AuthController::class, 'resendVerification'])
                 ->middleware('throttle:6,1');
+            Route::post('password/otp', [AuthController::class, 'requestPasswordOtp'])
+                ->middleware(['verified', 'throttle:5,1']);
+            Route::post('password', [AuthController::class, 'changePassword'])
+                ->middleware(['verified', 'throttle:10,1']);
         });
     });
 
     // ------------------------------------------------------ Tenant-scoped API
-    Route::middleware(['auth:sanctum', SetTenantContext::class])->group(function () {
+    Route::middleware(['auth:sanctum', 'verified', SetTenantContext::class])->group(function () {
         // Business & team
         Route::get('business', [BusinessController::class, 'show']);
         Route::put('business', [BusinessController::class, 'update'])->middleware('business.role:owner,manager');
@@ -209,6 +215,8 @@ Route::prefix('v1')->group(function () {
 
         Route::apiResource('plans', AdminPlanController::class)->except('show');
         Route::apiResource('bank-accounts', AdminBankAccountController::class)->except('show')->parameters(['bank-accounts' => 'bankAccount']);
+
+        Route::post('emails', [BulkEmailController::class, 'store'])->middleware('throttle:10,1');
 
         Route::get('users', [AdminUserController::class, 'index']);
         Route::get('users/{user}', [AdminUserController::class, 'show']);
