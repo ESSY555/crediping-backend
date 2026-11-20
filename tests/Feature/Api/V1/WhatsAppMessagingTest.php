@@ -471,6 +471,12 @@ class WhatsAppMessagingTest extends TestCase
         (new ProcessWhatsAppWebhook($payload))->handle(app(\App\Services\WhatsAppService::class), app(\App\Services\WhatsAppOnboardingService::class));
 
         $this->assertSame(1, Message::withoutGlobalScopes()->where('whatsapp_message_id', 'wamid.in')->count());
+        $this->assertSame(1, Notification::withoutGlobalScopes()->where('business_id', $business->id)->where('type', 'message_received')->count());
+        $notice = Notification::withoutGlobalScopes()->where('type', 'message_received')->first();
+        $this->assertSame($notice->data['message_id'], Message::withoutGlobalScopes()->where('whatsapp_message_id', 'wamid.in')->value('id'));
+        $this->actingAs($user)->postJson("/api/v1/notifications/{$notice->id}/read")->assertOk();
+        $this->assertNotNull($notice->fresh()->read_at);
+        $this->actingAs($user)->getJson('/api/v1/notifications/unread-count')->assertOk()->assertJsonPath('data.unread_count', 0);
         $this->assertDatabaseHas('messages', ['whatsapp_message_id' => 'wamid.in', 'direction' => 'inbound', 'customer_id' => $customer->id, 'body' => 'Paid today', 'business_id' => $business->id]);
         $this->assertDatabaseHas('messages', ['id' => $outbound['id'], 'status' => 'read']);
 

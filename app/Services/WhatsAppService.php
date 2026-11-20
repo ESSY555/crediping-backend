@@ -443,6 +443,11 @@ class WhatsAppService
             'whatsapp_connection_id' => $connection->id,
         ]);
 
+        if ($message->wasRecentlyCreated) {
+            $message->setRelation('customer', $customer);
+            $this->notifications->messageReceived($message);
+        }
+
         return $message;
     }
 

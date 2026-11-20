@@ -25,9 +25,8 @@ class StoreInvoiceRequest extends FormRequest
             'items.*.product_id' => ['nullable', 'integer', Rule::exists('products', 'id')->where('business_id', $businessId)],
             'items.*.description' => ['nullable', 'string', 'max:1000'],
             'items.*.quantity' => ['required', 'numeric', 'gt:0'],
-            // A product supplies price/tax. These fields are accepted only for custom lines.
+            // A product supplies the price. Unit price is accepted only for custom lines.
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0'],
-            'items.*.tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
         ];
     }
 }

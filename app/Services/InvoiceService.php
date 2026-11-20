@@ -24,7 +24,7 @@ class InvoiceService
     {
         return DB::transaction(function () use ($data, $userId) {
             $items = $data['items'];
-            unset($data['items']);
+            unset($data['items'], $data['include_tax']);
             $data['invoice_number'] = $data['invoice_number'] ?? $this->nextNumber();
             $data['issue_date'] ??= now()->toDateString();
             $data['discount'] = round((float) ($data['discount'] ?? 0), 2);
@@ -164,9 +164,9 @@ class InvoiceService
     public function recalculate(Invoice $invoice): Invoice
     {
         $subtotal = round((float) $invoice->items->sum('subtotal'), 2);
-        $tax = round((float) $invoice->items->sum('tax_amount'), 2);
-        $discount = min(round((float) $invoice->discount, 2), round($subtotal + $tax, 2));
-        $total = round(max(0, $subtotal + $tax - $discount), 2);
+        $tax = 0.0;
+        $discount = min(round((float) $invoice->discount, 2), $subtotal);
+        $total = round(max(0, $subtotal - $discount), 2);
         $paid = round((float) $invoice->payments()->sum('amount'), 2);
         $balance = round(max(0, $total - $paid), 2);
 
@@ -207,16 +207,15 @@ class InvoiceService
             // Catalogue products always price the line; only custom lines take client values.
             $quantity = (float) $item['quantity'];
             $unitPrice = round((float) ($product ? $product->unit_price : $item['unit_price']), 2);
-            $taxRate = round((float) ($product ? $product->tax_rate : ($item['tax_rate'] ?? 0)), 2);
             $subtotal = round($quantity * $unitPrice, 2);
-            $tax = round($subtotal * $taxRate / 100, 2);
+            $tax = 0.0;
 
             $invoice->items()->create([
                 'business_id' => TenantManager::businessId(),
                 'product_id' => $product?->id,
                 'description' => $item['description'] ?? $product?->name ?? 'Item',
                 'quantity' => $quantity, 'unit_price' => $unitPrice,
-                'tax_rate' => $taxRate, 'tax_amount' => $tax,
+                'tax_rate' => 0, 'tax_amount' => $tax,
                 'subtotal' => $subtotal, 'total' => round($subtotal + $tax, 2),
             ]);
         }

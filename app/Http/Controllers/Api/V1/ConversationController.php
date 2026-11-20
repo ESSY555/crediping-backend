@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Conversation;
 use App\Models\Customer;
+use App\Models\Notification;
 use App\Services\WhatsAppService;
 use App\Tenancy\TenantManager;
 use Illuminate\Http\Request;
@@ -51,8 +52,14 @@ class ConversationController extends ApiController
             ->with(['customer', 'connection', 'messages' => fn ($q) => $q->latest('id')->limit(50)])
             ->findOrFail($conversation);
 
-        // Opening a conversation marks inbound messages as read.
+        // Opening a conversation marks inbound messages as read, and clears the
+        // matching in-app notifications so every session sees the same count.
         $conversation->messages()->inbound()->whereNull('read_at')->update(['read_at' => now(), 'status' => 'read']);
+        Notification::query()
+            ->where('type', 'message_received')
+            ->whereNull('read_at')
+            ->where('data->conversation_id', $conversation->id)
+            ->update(['read_at' => now()]);
 
         return $this->successResponse('Conversation retrieved successfully.', $conversation);
     }

@@ -49,6 +49,35 @@ class NotificationService
         );
     }
 
+    public function messageReceived(\App\Models\Message $message): ?Notification
+    {
+        $already = Notification::query()
+            ->where('type', 'message_received')
+            ->where('data->message_id', $message->id)
+            ->exists();
+        if ($already) {
+            return null;
+        }
+
+        $name = $message->customer?->name ?? 'A customer';
+        $preview = trim((string) $message->body);
+        if (mb_strlen($preview) > 140) {
+            $preview = mb_substr($preview, 0, 137).'...';
+        }
+
+        return $this->notify(
+            'message_received',
+            'New WhatsApp message',
+            $preview !== '' ? sprintf('%s: %s', $name, $preview) : sprintf('%s sent you a message.', $name),
+            [
+                'message_id' => $message->id,
+                'conversation_id' => $message->conversation_id,
+                'customer_id' => $message->customer_id,
+                'whatsapp_message_id' => $message->whatsapp_message_id,
+            ],
+        );
+    }
+
     public function messageFailed(\App\Models\Message $message): ?Notification
     {
         return $this->notify(

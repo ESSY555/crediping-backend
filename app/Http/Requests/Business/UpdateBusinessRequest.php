@@ -20,7 +20,6 @@ class UpdateBusinessRequest extends FormRequest
             'country' => ['nullable', 'string', 'max:100'],
             'currency' => ['nullable', 'string', 'size:3'],
             'timezone' => ['nullable', 'timezone:all'],
-            'tax_number' => ['nullable', 'string', 'max:100'],
         ];
     }
 
