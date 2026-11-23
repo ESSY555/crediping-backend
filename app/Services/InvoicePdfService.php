@@ -57,7 +57,7 @@ class InvoicePdfService
         $discountLine = $invoice->discount > 0 ? "<div class=\"total-row\"><span>Discount:</span><span class=\"amount\">{$this->formatCurrency($invoice->discount, $business->currency)}</span></div>" : '';
         $notesSection = $invoice->notes ? "<div class=\"section\"><div class=\"section-title\">Notes</div><div class=\"section-content\">" . htmlspecialchars($invoice->notes) . "</div></div>" : '';
         $logo = $this->logoTag($business);
-        $footerNote = htmlspecialchars((string) $business->setting('invoice_footer', 'Thank you for your business!'));
+        $footerNote = htmlspecialchars((string) $business->setting('invoice_footer', 'Thank you for choosing us!'));
         $businessName = htmlspecialchars($business->name);
         $customerName = htmlspecialchars((string) $customer?->name);
         $customerBusiness = htmlspecialchars((string) $customer?->business_name);

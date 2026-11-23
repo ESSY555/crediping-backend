@@ -1,0 +1,43 @@
+# Query: Thank you for your business
+# ContextLines: 1
+
+8 results - 7 files
+
+crediping-backend • app\Http\Controllers\Api\V1\AuthController.php:
+  66                  'payment_terms_days' => '14',
+  67:                 'invoice_footer' => 'Thank you for choosing us.',
+  68                  'reminders_enabled' => 'true',
+
+crediping-backend • app\Services\InvoicePdfService.php:
+  59          $logo = $this->logoTag($business);
+  60:         $footerNote = htmlspecialchars((string) $business->setting('invoice_footer', 'Thank you for choosing us!'));
+  61          $businessName = htmlspecialchars($business->name);
+
+crediping-backend • app\Services\InvoiceService.php:
+  245              . ($v['due_date'] ? "Due date: {$v['due_date']}\n" : '')
+  246:             . "\nThank you for choosing us.";
+  247      }
+
+crediping-backend • config\whatsapp_templates.php:
+  36              'category' => 'utility',
+  37:             'content' => "Hello {{customer_name}}, {{business_name}} has received your payment of {{amount}} for invoice {{invoice_number}}. Thank you for choosing us.",
+  38          ],
+
+crediping-backend • database\seeders\DemoSeeder.php:
+  57                  'setup_completed' => 'true', 'invoice_prefix' => 'INV-', 'payment_terms_days' => '14',
+  58:                 'invoice_footer' => 'Thank you for choosing us. Payment to Ridgeline Trading Co., GTBank 0123456789.',
+  59                  'reminders_enabled' => 'true', 'payment_receipts_enabled' => 'false', 'industry' => 'Distributor',
+
+crediping-backend • tests\Feature\Api\V1\WhatsAppMessagingTest.php:
+  272              'whatsapp_template_id' => 'flowcrm_payment_received',
+  273:             'content' => 'Hello {{customer_name}}, {{business_name}} has received your payment of {{amount}} for invoice {{invoice_number}}. Thank you for choosing us.',
+  274          ]);
+
+  299                  'unit_price' => 0,
+  300:                 'body' => 'Hello Israel, ' . $business->name . ' has received your payment of  for invoice . Thank you for choosing us.',
+  301                  'status' => 'failed',
+
+crediping-frontend • src\routes\invoices.$invoiceId.tsx:
+  148      waMode === "send"
+  149:       ? `Hello ${customer?.name ?? "Customer"},\n\nInvoice ${invoice.invoice_number} from ${companyName || "us"} is ready.\nTotal: ${formatMoney(invoice.total, currency)}\nAmount paid: ${formatMoney(invoice.amount_paid, currency)}\nBalance due: ${formatMoney(balance, currency)}${invoice.due_date ? `\nDue date: ${formatDate(invoice.due_date)}` : ""}\n\nThank you for choosing us.${signature}`
+  150        : `Hello ${customer?.name ?? "Customer"},\n\nThis is a friendly reminder that invoice ${invoice.invoice_number} ${late > 0 ? `is ${late} day(s) overdue` : invoice.due_date ? `is due on ${formatDate(invoice.due_date)}` : "is awaiting payment"}.\nOutstanding balance: ${formatMoney(balance, currency)}\n\nKindly arrange payment at your earliest convenience.${signature}`;

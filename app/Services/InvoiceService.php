@@ -243,7 +243,7 @@ class InvoiceService
         return "Hello {$v['customer_name']},\n\nInvoice {$v['invoice_number']} from {$v['business_name']} is ready.\n"
             . "Total: {$v['total']}\nAmount paid: {$v['amount_paid']}\nBalance due: {$v['balance_due']}\n"
             . ($v['due_date'] ? "Due date: {$v['due_date']}\n" : '')
-            . "\nThank you for your business.";
+            . "\nThank you for choosing us.";
     }
 
     private function defaultReminderMessage(Invoice $invoice): string

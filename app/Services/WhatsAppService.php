@@ -40,6 +40,9 @@ class WhatsAppService
             ? Conversation::query()->findOrFail($data['conversation_id'])
             : $this->conversationFor(Customer::query()->findOrFail($data['customer_id']));
 
+        // Resolved up front: every branch below (template, free text, signature) needs it.
+        $business = $conversation->customer?->business ?: Business::query()->find(TenantManager::businessId());
+
         $template = null;
         $variables = $data['template_variables'] ?? [];
         $invoice = $data['invoice'] ?? null;
@@ -70,8 +73,10 @@ class WhatsAppService
             }
 
             $variables = array_merge($defaults, $variables);
+
             if ($isCustomMessage) {
                 $typedBody = trim((string) ($variables['message'] ?? $data['body'] ?? $data['content'] ?? ''));
+                // Signature is appended once, further down, for every path.
                 $variables['message'] = WhatsAppCloudApi::sanitizeTemplateParam($typedBody);
             }
             $body = $template->render($variables);
@@ -103,11 +108,13 @@ class WhatsAppService
             }
         }
 
-        $business = $conversation->customer?->business ?: Business::query()->find(TenantManager::businessId());
-        $body = $this->appendSignature($body, $business?->name, $business?->phone);
+        $body = $this->appendSignature($body, $business?->name, null);
+
         if ($template && $this->isCustomMessageTemplate($template) && isset($variables['message'])) {
+            $rawMessage = (string) ($typedBody ?: $variables['message']);
             $variables['message'] = WhatsAppCloudApi::sanitizeTemplateParam(
-                $this->appendSignature((string) ($typedBody ?: $variables['message']), $business?->name, $business?->phone),
+                $this->appendSignature($rawMessage, $business?->name, null),
+                $rawMessage,
             );
         }
 
@@ -199,7 +206,7 @@ class WhatsAppService
                 $newVars = array_merge($defaults, array_filter($existingVars, fn ($v) => trim((string) $v) !== ''));
                 $body = $template->render($newVars);
                 $business = $customer->business ?: Business::query()->find(TenantManager::businessId());
-                $body = $this->appendSignature($body, $business?->name, $business?->phone);
+                $body = $this->appendSignature($body, $business?->name, null);
 
                 $metadata = $message->metadata ?? [];
                 $metadata['template_variables'] = $newVars;

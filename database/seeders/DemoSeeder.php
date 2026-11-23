@@ -55,7 +55,7 @@ class DemoSeeder extends Seeder
         TenantManager::runAs($business->id, function () use ($owner) {
             foreach ([
                 'setup_completed' => 'true', 'invoice_prefix' => 'INV-', 'payment_terms_days' => '14',
-                'invoice_footer' => 'Thank you for your business. Payment to Ridgeline Trading Co., GTBank 0123456789.',
+                'invoice_footer' => 'Thank you for choosing us. Payment to Ridgeline Trading Co., GTBank 0123456789.',
                 'reminders_enabled' => 'true', 'payment_receipts_enabled' => 'false', 'industry' => 'Distributor',
             ] as $key => $value) {
                 BusinessSetting::create(['key' => $key, 'value' => $value]);
