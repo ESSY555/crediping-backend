@@ -236,8 +236,8 @@ class Phase2Phase3ComprehensiveTest extends TestCase
         $response->assertCreated()
             ->assertJsonPath('data.status', 'draft')
             ->assertJsonPath('data.subtotal', '200.00')
-            ->assertJsonPath('data.tax', '20.00')
-            ->assertJsonPath('data.total', '220.00');
+            ->assertJsonPath('data.tax', '0.00')
+            ->assertJsonPath('data.total', '200.00');
     }
 
     public function test_invoice_calculations_with_discount(): void
@@ -263,9 +263,9 @@ class Phase2Phase3ComprehensiveTest extends TestCase
 
         $response->assertCreated()
             ->assertJsonPath('data.subtotal', '100.00')
-            ->assertJsonPath('data.tax', '10.00')
+            ->assertJsonPath('data.tax', '0.00')
             ->assertJsonPath('data.discount', '50.00')
-            ->assertJsonPath('data.total', '60.00');
+            ->assertJsonPath('data.total', '50.00');
     }
 
     public function test_invoice_pdf_generation(): void

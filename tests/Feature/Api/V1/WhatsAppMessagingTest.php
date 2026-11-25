@@ -226,7 +226,7 @@ class WhatsAppMessagingTest extends TestCase
             ->assertUnprocessable()->assertJsonValidationErrors('template_id');
     }
 
-    public function test_message_signature_includes_business_phone(): void
+    public function test_message_signature_includes_business_name_only(): void
     {
         Queue::fake();
         [$user, $business] = $this->membership();
@@ -270,7 +270,7 @@ class WhatsAppMessagingTest extends TestCase
         $paymentTpl = $this->templateFor($business, [
             'name' => 'flowcrm_payment_received',
             'whatsapp_template_id' => 'flowcrm_payment_received',
-            'content' => 'Hello {{customer_name}}, {{business_name}} has received your payment of {{amount}} for invoice {{invoice_number}}. Thank you for your business.',
+            'content' => 'Hello {{customer_name}}, {{business_name}} has received your payment of {{amount}} for invoice {{invoice_number}}. Thank you for choosing us.',
         ]);
 
         // Sending without explicitly passing template_variables or invoice_id auto-links customer's invoice
@@ -297,7 +297,7 @@ class WhatsAppMessagingTest extends TestCase
                 'billing_category' => 'utility',
                 'billing_source' => 'included',
                 'unit_price' => 0,
-                'body' => 'Hello Israel, ' . $business->name . ' has received your payment of  for invoice . Thank you for your business.',
+                'body' => 'Hello Israel, ' . $business->name . ' has received your payment of  for invoice . Thank you for choosing us.',
                 'status' => 'failed',
                 'error_message' => '(#131008) Required parameter is missing',
                 'metadata' => ['template_variables' => []],
@@ -471,6 +471,12 @@ class WhatsAppMessagingTest extends TestCase
         (new ProcessWhatsAppWebhook($payload))->handle(app(\App\Services\WhatsAppService::class), app(\App\Services\WhatsAppOnboardingService::class));
 
         $this->assertSame(1, Message::withoutGlobalScopes()->where('whatsapp_message_id', 'wamid.in')->count());
+        $this->assertSame(1, Notification::withoutGlobalScopes()->where('business_id', $business->id)->where('type', 'message_received')->count());
+        $notice = Notification::withoutGlobalScopes()->where('type', 'message_received')->first();
+        $this->assertSame($notice->data['message_id'], Message::withoutGlobalScopes()->where('whatsapp_message_id', 'wamid.in')->value('id'));
+        $this->actingAs($user)->postJson("/api/v1/notifications/{$notice->id}/read")->assertOk();
+        $this->assertNotNull($notice->fresh()->read_at);
+        $this->actingAs($user)->getJson('/api/v1/notifications/unread-count')->assertOk()->assertJsonPath('data.unread_count', 0);
         $this->assertDatabaseHas('messages', ['whatsapp_message_id' => 'wamid.in', 'direction' => 'inbound', 'customer_id' => $customer->id, 'body' => 'Paid today', 'business_id' => $business->id]);
         $this->assertDatabaseHas('messages', ['id' => $outbound['id'], 'status' => 'read']);
 

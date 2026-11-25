@@ -54,12 +54,10 @@ class InvoicePdfService
 
         // Pre-calculate values for string interpolation
         $dueDateFormatted = $invoice->due_date ? $invoice->due_date->format('M d, Y') : 'N/A';
-        $taxLine = $invoice->tax > 0 ? "<div class=\"total-row\"><span>Tax:</span><span class=\"amount\">{$this->formatCurrency($invoice->tax, $business->currency)}</span></div>" : '';
         $discountLine = $invoice->discount > 0 ? "<div class=\"total-row\"><span>Discount:</span><span class=\"amount\">{$this->formatCurrency($invoice->discount, $business->currency)}</span></div>" : '';
-        $taxNumberLine = $business->tax_number ? "<p>Tax Number: {$business->tax_number}</p>" : '';
         $notesSection = $invoice->notes ? "<div class=\"section\"><div class=\"section-title\">Notes</div><div class=\"section-content\">" . htmlspecialchars($invoice->notes) . "</div></div>" : '';
         $logo = $this->logoTag($business);
-        $footerNote = htmlspecialchars((string) $business->setting('invoice_footer', 'Thank you for your business!'));
+        $footerNote = htmlspecialchars((string) $business->setting('invoice_footer', 'Thank you for choosing us!'));
         $businessName = htmlspecialchars($business->name);
         $customerName = htmlspecialchars((string) $customer?->name);
         $customerBusiness = htmlspecialchars((string) $customer?->business_name);
@@ -229,7 +227,6 @@ class InvoicePdfService
                         <p>{$business->city}, {$business->state} {$business->country}</p>
                         <p>Email: {$business->email}</p>
                         <p>Phone: {$business->phone}</p>
-                        {$taxNumberLine}
                     </div>
                     <div class="invoice-details">
                         <h2>INVOICE</h2>
@@ -259,7 +256,6 @@ class InvoicePdfService
                             <th>Description</th>
                             <th class="text-center">Qty</th>
                             <th class="text-right">Unit Price</th>
-                            <th class="text-right">Tax Rate</th>
                             <th class="text-right">Amount</th>
                         </tr>
                     </thead>
@@ -275,7 +271,6 @@ class InvoicePdfService
                         <span class="amount">{$this->formatCurrency($invoice->subtotal, $business->currency)}</span>
                     </div>
                     {$discountLine}
-                    {$taxLine}
                     <div class="total-row final">
                         <span>Total:</span>
                         <span class="amount">{$this->formatCurrency($invoice->total, $business->currency)}</span>
@@ -334,14 +329,12 @@ class InvoicePdfService
                     <td>%s</td>
                     <td class="text-center">%s</td>
                     <td class="text-right">%s</td>
-                    <td class="text-right">%s%%</td>
                     <td class="text-right">%s</td>
                 </tr>',
                 htmlspecialchars($item->description),
                 number_format($item->quantity, 2),
                 number_format($item->unit_price, 2),
-                number_format($item->tax_rate, 2),
-                number_format($item->total, 2)
+                number_format($item->subtotal, 2)
             );
         }
         return $html;

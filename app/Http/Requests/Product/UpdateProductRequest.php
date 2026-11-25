@@ -21,7 +21,6 @@ class UpdateProductRequest extends StoreProductRequest
             ],
             'description' => ['nullable', 'string'],
             'unit_price' => ['sometimes', 'required', 'numeric', 'min:0'],
-            'tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'status' => ['nullable', 'in:active,inactive'],
         ];
     }

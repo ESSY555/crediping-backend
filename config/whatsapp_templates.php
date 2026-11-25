@@ -34,7 +34,7 @@ return [
         [
             'name' => 'flowcrm_payment_received',
             'category' => 'utility',
-            'content' => "Hello {{customer_name}}, {{business_name}} has received your payment of {{amount}} for invoice {{invoice_number}}. Thank you for your business.",
+            'content' => "Hello {{customer_name}}, {{business_name}} has received your payment of {{amount}} for invoice {{invoice_number}}. Thank you for choosing us.",
         ],
         [
             'name' => 'flowcrm_custom_message',

@@ -64,7 +64,7 @@ class AuthController extends ApiController
                 'setup_completed' => 'true',
                 'invoice_prefix' => 'INV-',
                 'payment_terms_days' => '14',
-                'invoice_footer' => 'Thank you for your business.',
+                'invoice_footer' => 'Thank you for choosing us.',
                 'reminders_enabled' => 'true',
                 'payment_receipts_enabled' => 'false',
             ];

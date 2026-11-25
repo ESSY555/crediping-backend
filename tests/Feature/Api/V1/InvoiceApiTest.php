@@ -31,9 +31,9 @@ class InvoiceApiTest extends TestCase
         ])->assertCreated()->json('data');
 
         $this->assertSame('200.00', $invoice['subtotal']);
-        $this->assertSame('20.00', $invoice['tax']);
-        $this->assertSame('215.00', $invoice['total']);
-        $this->assertSame('215.00', $invoice['balance_due']);
+        $this->assertSame('0.00', $invoice['tax']);
+        $this->assertSame('195.00', $invoice['total']);
+        $this->assertSame('195.00', $invoice['balance_due']);
     }
 
     public function test_invoice_cannot_reference_another_business_customer(): void

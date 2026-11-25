@@ -11,7 +11,7 @@ class Notification extends Model
     use BelongsToBusiness;
 
     public const TYPES = [
-        'payment_received', 'invoice_overdue', 'message_failed', 'broadcast_completed',
+        'payment_received', 'invoice_overdue', 'message_received', 'message_failed', 'broadcast_completed',
         'scheduled_message_sent', 'whatsapp_connection_failure',
         'payment_approved', 'payment_declined', 'subscription_expiring', 'subscription_expired', 'quota_exhausted',
     ];
